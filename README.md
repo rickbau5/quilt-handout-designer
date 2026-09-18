@@ -76,12 +76,45 @@ Open With → your browser.)
 Save/Load is entirely local, the same way Excalidraw works — there's no
 account and nothing is uploaded anywhere.
 
-- **Save Project** downloads a `.qhd.json` file with everything in it. Keep it
-  next to your handout files.
-- **Load Project** opens one back up.
+- **Save** writes to whatever `.qhd.json` file you last opened or saved to,
+  overwriting it in place — no dialog, no "(1)" copies piling up. The first
+  time in a session (nothing open yet), it behaves like Save As.
+- **Save As** always asks where to save, and switches future **Save** clicks
+  to that file.
+- **Load Project** opens a `.qhd.json` file and remembers it, so **Save**
+  goes straight back into it from then on.
+- The topbar shows the current file's name next to Load Project, with a `●`
+  in front of it when you have changes that haven't been written to that
+  file yet.
+- This overwrite-in-place behavior needs a browser feature only Chrome and
+  Edge currently support. In other browsers (Firefox, Safari), Save and Save
+  As both fall back to downloading a fresh copy each time, the same as
+  before.
 - The app also autosaves to this browser as a backup and will offer to
   restore it next time you open the page — but a saved project file is the
-  safe copy if you switch computers or clear your browser.
+  safe copy if you switch computers or clear your browser. The "leave this
+  page?" warning only appears when you have changes not yet written to a
+  file; it won't nag you right after a Save.
+
+## Sharing a project with someone else
+
+**Share Link** builds a link containing the whole project and shows it to you
+to copy (and copies it to your clipboard automatically, when your browser
+allows it). Send that link instead of the file — whoever opens it gets a
+prompt to load the project it contains, replacing whatever they currently
+have open.
+
+- The link's payload lives entirely after the `#` in the URL, so it's never
+  sent to a server or written into anyone's server logs — it only ever
+  travels as far as you paste it.
+- Project data compresses well (quilt projects repeat the same field names
+  and values a lot), so links usually stay a very manageable length even for
+  a full page of pieces. If a project is large enough to produce a very long
+  link, Share Link will tell you so — some chat apps and text fields balk at
+  extremely long URLs, so for a huge project the `.qhd.json` file is still
+  the more reliable way to hand it off.
+- Works across browsers — a link made in Chrome opens fine in Firefox or
+  Safari, and vice versa.
 
 ## Exporting for Word
 

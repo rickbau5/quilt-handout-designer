@@ -45,7 +45,7 @@
   // can show stale behavior until it's reloaded. If a fix doesn't seem to
   // be taking effect, check this number against the one you expect and do
   // a hard refresh (Ctrl+Shift+R) if it's behind.
-  const APP_BUILD = "2026-09-18.2";
+  const APP_BUILD = "2026-09-18.4";
 
   const PALETTE = [
     "#e07a5f", "#3d8bd4", "#81b29a", "#f2cc8f", "#9b5de5",
@@ -476,9 +476,18 @@
     return { x: pick(proposedX, shape.w, candX), y: pick(proposedY, shape.h, candY) };
   }
 
-  function drawCandidates() {
+  function drawCandidates(excludeId) {
+    // excludeId leaves out the shape currently being drawn/resized itself —
+    // without this, a shape started or resized flush against an existing
+    // edge keeps re-snapping to its OWN growing edge every mousemove (it's
+    // in project.shapes from the moment mousedown pushes it), which can
+    // pin it at a tiny size instead of letting it grow with the cursor.
+    // snapShapeMove() already excludes the shape being moved the same way.
     const xs = [], ys = [];
-    for (const s of project.shapes) { xs.push(s.x, s.x + s.w); ys.push(s.y, s.y + s.h); }
+    for (const s of project.shapes) {
+      if (excludeId && s.id === excludeId) continue;
+      xs.push(s.x, s.x + s.w); ys.push(s.y, s.y + s.h);
+    }
     return { xs, ys };
   }
 
@@ -1149,7 +1158,7 @@
       renderAll();
 
     } else if (drag.mode === "draw") {
-      const cands = drawCandidates();
+      const cands = drawCandidates(drag.shape.id);
       const ex = snapFree(pt.x, cands.xs), ey = snapFree(pt.y, cands.ys);
       const s = drag.shape;
       const x0 = drag.startPt.x, y0 = drag.startPt.y;
@@ -1166,9 +1175,9 @@
 
     } else if (drag.mode === "resize") {
       const s = drag.shape, o = drag.orig;
-      const cands = drawCandidates().xs.concat(); // reuse point-snap for corner
-      const cx = snapFree(pt.x, drawCandidates().xs);
-      const cy = snapFree(pt.y, drawCandidates().ys);
+      const cands = drawCandidates(s.id).xs.concat(); // reuse point-snap for corner
+      const cx = snapFree(pt.x, drawCandidates(s.id).xs);
+      const cy = snapFree(pt.y, drawCandidates(s.id).ys);
       let x = o.x, y = o.y, w = o.w, h = o.h;
       if (drag.handle === "tl") { w = (o.x + o.w) - cx; h = (o.y + o.h) - cy; x = cx; y = cy; }
       else if (drag.handle === "tr") { w = cx - o.x; h = (o.y + o.h) - cy; y = cy; }
@@ -1222,6 +1231,7 @@
       marqueeLayer.innerHTML = "";
     }
     drag = null;
+    updateAutosaveStatus(); // catch up the label now that it's safe to let the topbar reflow
   });
 
   // ---------------------------------------------------------------------
@@ -1402,14 +1412,18 @@
     downloadBlob(new Blob([text], { type: mime }), filename);
   }
 
-  function serializeProject() {
-    return JSON.stringify({
+  function projectDataObject() {
+    return {
       version: 1,
       gridUnit: project.gridUnit,
       labelColors: project.labelColors,
       showBorders: project.showBorders,
       shapes: project.shapes
-    }, null, 2);
+    };
+  }
+
+  function serializeProject() {
+    return JSON.stringify(projectDataObject(), null, 2);
   }
 
   const FILE_PICKER_TYPES = [{
@@ -1598,6 +1612,163 @@
     updateUndoRedoButtons();
   }
 
+  // ---------------------------------------------------------------------
+  // Share link — the whole project packed into a URL, as an alternative to
+  // passing the .qhd.json file around. Lives in the URL's hash (#share=...),
+  // never the query string, so it's never sent to a server and never shows
+  // up in server logs — it only ever exists in the two browsers involved.
+  //
+  // Payload shape is "<format-tag>.<base64url data>":
+  //   gz1 = gzip-compressed, via the browser's built-in CompressionStream —
+  //         quilt project JSON is extremely repetitive (the same field names
+  //         and values over and over, one per piece) so this typically
+  //         shrinks it by 80-90%, which is what keeps even a big, multi-block
+  //         design down to a shareable link instead of a monstrous one.
+  //   raw1 = plain UTF-8 JSON, no compression — the fallback for a browser
+  //          without CompressionStream/DecompressionStream (older Firefox/
+  //          Safari). Still works, just a longer link.
+  // The tag is written by whichever browser CREATES the link and read by
+  // whichever browser OPENS it, so those can be two different browsers
+  // without any coordination — decoding just does what the tag says.
+  // ---------------------------------------------------------------------
+  const SHARE_FORMAT_GZIP = "gz1";
+  const SHARE_FORMAT_RAW = "raw1";
+  const SHARE_LENGTH_WARN_AT = 6000; // rough point past which some apps (texting, some email clients) start mangling long links
+
+  function bytesToBase64Url(bytes) {
+    let binary = "";
+    const chunkSize = 0x8000; // avoid a call-stack blowup from String.fromCharCode.apply on a huge array
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function base64UrlToBytes(b64url) {
+    let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function gzipCompress(bytes) {
+    const cs = new CompressionStream("gzip");
+    const writer = cs.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    return new Uint8Array(await new Response(cs.readable).arrayBuffer());
+  }
+  async function gzipDecompress(bytes) {
+    const ds = new DecompressionStream("gzip");
+    const writer = ds.writable.getWriter();
+    writer.write(bytes);
+    writer.close();
+    return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+  }
+
+  async function buildShareUrl() {
+    // Compact (no pretty-printing) — the raw1 fallback benefits directly
+    // from dropping the indentation, and gzip does slightly less work too.
+    const text = JSON.stringify(projectDataObject());
+    const rawBytes = new TextEncoder().encode(text);
+    let payloadBytes = rawBytes;
+    let tag = SHARE_FORMAT_RAW;
+    if ("CompressionStream" in window) {
+      try {
+        payloadBytes = await gzipCompress(rawBytes);
+        tag = SHARE_FORMAT_GZIP;
+      } catch (e) {
+        console.error(e);
+        payloadBytes = rawBytes;
+        tag = SHARE_FORMAT_RAW;
+      }
+    }
+    const payload = tag + "." + bytesToBase64Url(payloadBytes);
+    const url = location.origin + location.pathname + "#share=" + payload;
+    return { url, rawSize: rawBytes.length, wireSize: payloadBytes.length };
+  }
+
+  async function decodeSharePayload(payload) {
+    const dotIdx = payload.indexOf(".");
+    if (dotIdx === -1) throw new Error("malformed share payload");
+    const tag = payload.slice(0, dotIdx);
+    const bytes = base64UrlToBytes(payload.slice(dotIdx + 1));
+    let textBytes = bytes;
+    if (tag === SHARE_FORMAT_GZIP) {
+      if (!("DecompressionStream" in window)) {
+        throw new Error("This browser can't decompress this link — try a recent Chrome, Edge, Firefox, or Safari.");
+      }
+      textBytes = await gzipDecompress(bytes);
+    } else if (tag !== SHARE_FORMAT_RAW) {
+      throw new Error("Unrecognized share link format (" + tag + ") — it may be from a newer version of this app.");
+    }
+    return JSON.parse(new TextDecoder().decode(textBytes));
+  }
+
+  async function shareProject() {
+    let built;
+    try {
+      built = await buildShareUrl();
+    } catch (e) {
+      console.error(e);
+      alert("Couldn't build a share link.");
+      return;
+    }
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(built.url);
+        copied = true;
+      }
+    } catch (e) { /* clipboard blocked (common on file://, or without a permission grant) — the prompt below still lets you copy it by hand */ }
+    const sizeNote = built.url.length > SHARE_LENGTH_WARN_AT
+      ? `\n\nHeads up: this link is ${built.url.length.toLocaleString()} characters long (this project has a lot of pieces) — some apps (texting, some email clients) may mangle or refuse a link this long. If that happens, share the .qhd.json file instead.`
+      : "";
+    prompt(
+      (copied
+        ? "Copied to your clipboard! Here it is again in case you need to grab it manually:"
+        : "Your browser didn't allow copying automatically here — copy this link manually (it's already selected):") + sizeNote,
+      built.url
+    );
+  }
+
+  // Returns true if a shared project was found in the URL and the user
+  // chose to load it (whether or not they then confirmed replacing the
+  // current project — either way there's nothing left for the normal
+  // autosave-restore prompt to do on top of this).
+  async function tryLoadShareLink() {
+    const hashMatch = /(?:^#|[&#])share=([^&]+)/.exec(location.hash || "");
+    const searchMatch = !hashMatch && /(?:^\?|[&?])share=([^&]+)/.exec(location.search || "");
+    const payload = hashMatch ? hashMatch[1] : (searchMatch ? searchMatch[1] : null);
+    if (!payload) return false;
+    // Consume it from the address bar immediately, whatever happens next —
+    // so refreshing doesn't re-prompt forever, and this (possibly very long)
+    // payload doesn't linger in the URL bar or browser history.
+    history.replaceState(null, "", location.pathname + location.search.replace(/[?&]share=[^&]+/, ""));
+    let data;
+    try {
+      data = await decodeSharePayload(payload);
+    } catch (e) {
+      console.error(e);
+      alert("That share link doesn't look valid: " + (e && e.message ? e.message : e));
+      return false;
+    }
+    const n = (data.shapes || []).length;
+    if (!confirm(`Load the shared project (${n} piece${n === 1 ? "" : "s"})? This replaces whatever's currently open here.`)) {
+      return false;
+    }
+    loadProjectData(data);
+    // A shared project isn't tied to any file on this machine yet.
+    currentFileHandle = null;
+    currentFileName = null;
+    fileDirty = true;
+    updateSaveStatus();
+    return true;
+  }
+
+  document.getElementById("btnShare").addEventListener("click", () => { shareProject(); });
+
   const BACKUP_MIN_INTERVAL_MS = 4000; // don't rotate the backup more than this often
   let lastBackupRotationAt = 0;
 
@@ -1626,7 +1797,14 @@
       }
       localStorage.setItem(AUTOSAVE_KEY, serializeProject());
       lastAutosaveAt = now;
-      updateAutosaveStatus();
+      // Skip the visible status-text update while a drag is in progress: it's
+      // the first thing to give the topbar new content ("Autosaved just now"),
+      // and if that's enough to make the topbar wrap to a second line, the
+      // canvas shifts down mid-gesture — right under an in-progress
+      // draw/move/resize, throwing off every remaining coordinate in that
+      // drag. The actual save above still happens every step either way; the
+      // label just catches up on the next mouseup or the 5s interval tick.
+      if (!drag) updateAutosaveStatus();
     } catch (e) { /* ignore quota errors */ }
   }
 
@@ -1775,7 +1953,7 @@
   // ---------------------------------------------------------------------
   // Init
   // ---------------------------------------------------------------------
-  function init() {
+  async function init() {
     const buildEl = document.getElementById("appBuild");
     if (buildEl) {
       buildEl.textContent = "build " + APP_BUILD;
@@ -1784,7 +1962,13 @@
     gridUnitSelect.value = String(project.gridUnit);
     applyBorderSetting();
     setTool("select");
-    tryRestoreAutosave();
+    // A share link in the URL takes priority over the usual "restore your
+    // last session?" prompt — if you followed a link, loading what it
+    // points to is clearly the point, not whatever was autosaved here
+    // before. If there's no share link (the common case), this is a no-op
+    // and falls straight through to the normal autosave-restore check.
+    const loadedFromShareLink = await tryLoadShareLink();
+    if (!loadedFromShareLink) tryRestoreAutosave();
     renderAll();
     updateUndoRedoButtons();
   }
