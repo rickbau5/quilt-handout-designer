@@ -1,0 +1,366 @@
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #d8dbe0;
+  --ink: #24292f;
+  --muted: #6b7280;
+  --accent: #4f7cff;
+  --accent-ink: #ffffff;
+  --danger: #d64545;
+  --grid-line: #dfe3ea;
+  --grid-line-major: #c3c9d4;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Top bar */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 15px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.build-stamp {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  margin-right: 12px;
+  align-self: center;
+  cursor: default;
+}
+
+.topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.file-status {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover { background: #eef1f6; }
+button:active { transform: translateY(1px); }
+
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+select, input[type=number], input[type=text] {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--ink);
+}
+
+/* Main layout */
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#toolbar {
+  width: 150px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+#toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+#toolbar .icon { width: 18px; display: inline-block; text-align: center; }
+
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+#toolbar h4 {
+  margin: 2px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.label-colors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.label-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.label-color-row input[type="color"] {
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.label-color-name {
+  flex: 1;
+}
+
+.label-color-row-unused .label-color-name {
+  color: var(--muted);
+  font-weight: 500;
+  font-style: italic;
+}
+
+#toolbar button.label-color-remove {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.label-color-remove:hover {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
+#toolbar button.label-colors-cleanup {
+  margin-top: 4px;
+  width: 100%;
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.label-colors-cleanup:hover {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
+#canvasWrap {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  position: relative;
+}
+
+#canvas {
+  background: #ffffff;
+  display: block;
+}
+
+#properties {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: 14px;
+  overflow-y: auto;
+}
+
+#properties h3 {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.props-empty {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.prop-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+/* Setting display:flex above on every .prop-row unconditionally means it
+   wins over the browser's built-in "[hidden] { display: none }" rule —
+   author CSS always beats the browser's default stylesheet, no matter the
+   specificity, so JS setting `row.hidden = true` alone doesn't actually
+   hide a .prop-row visually. This makes hidden win again. Without this,
+   every properties row shows for every shape, all at once, regardless of
+   type — the JS that picks which rows apply was correct the whole time;
+   this one selector was silently overriding it. */
+.prop-row[hidden] {
+  display: none;
+}
+
+.prop-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--muted);
+  flex: 1;
+  min-width: 90px;
+}
+
+.prop-row input, .prop-row select {
+  width: 100%;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  align-self: flex-end;
+  margin-bottom: 2px;
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* SVG canvas contents */
+.grid-line { stroke: var(--grid-line); stroke-width: 1; }
+.grid-line-major { stroke: var(--grid-line-major); stroke-width: 1; }
+
+.shape-fill { stroke: #33383f; stroke-width: 1.5; }
+#canvas.no-borders .shape-fill { stroke: none; }
+.sew-line { stroke: #33383f; stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+.press-line-solid { stroke: #33383f; stroke-width: 2; fill: none; }
+.press-arrow { stroke: #33383f; stroke-width: 2.5; fill: none; marker-end: url(#arrowHead); }
+.shape-label-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  fill: #1c1f24;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+.free-text {
+  font-family: -apple-system, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  fill: #1c1f24;
+  user-select: none;
+}
+
+.selection-box {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.selection-handle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.group-box {
+  stroke-dasharray: none;
+  stroke-width: 2;
+}
+
+.marquee-box {
+  fill: rgba(79, 124, 255, 0.08);
+  stroke: var(--accent);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.shape-group { cursor: move; }
+.shape-group.marquee-hover { outline: none; }

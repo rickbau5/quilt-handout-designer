@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quilt Handout Designer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <div class="brand">Quilt Handout Designer</div>
+    <span id="appBuild" class="build-stamp"></span>
+
+    <div class="topbar-group">
+      <button id="btnNew" title="New project">New</button>
+      <button id="btnSave" title="Save — overwrites the file you opened or last saved to, if this browser supports it">Save</button>
+      <button id="btnSaveAs" title="Save As — always asks where to save, and switches future Saves to that file">Save As</button>
+      <button id="btnLoad" title="Open a project file">Load Project</button>
+      <input type="file" id="fileLoadInput" accept=".qhd.json,application/json" hidden>
+      <span id="fileStatus" class="field file-status"></span>
+      <span id="autosaveStatus" class="field" title="Saved to this browser automatically as a backup. Use Save to also write to your project file."></span>
+    </div>
+
+    <div class="topbar-group">
+      <label class="field">
+        Grid
+        <select id="gridUnitSelect">
+          <option value="0.25">1/4"</option>
+          <option value="0.125">1/8"</option>
+          <option value="0.5">1/2"</option>
+          <option value="1">1"</option>
+        </select>
+      </label>
+      <label class="field">
+        <input type="checkbox" id="chkBorders" checked>
+        Piece borders
+      </label>
+    </div>
+
+    <div class="topbar-group">
+      <label class="field">
+        Export DPI
+        <select id="dpiSelect">
+          <option value="150">150</option>
+          <option value="300" selected>300</option>
+          <option value="600">600</option>
+        </select>
+      </label>
+      <button id="btnExportPng" title="Export selection (or everything) as a transparent PNG">Export PNG</button>
+      <button id="btnExportSvg" title="Export selection (or everything) as an SVG">Export SVG</button>
+    </div>
+  </header>
+
+  <div id="main">
+
+    <aside id="toolbar">
+      <button class="tool" data-tool="select" title="Select / move (V)">
+        <span class="icon">&#9986;&#65039;</span><span class="label">Select</span>
+      </button>
+      <button class="tool" data-tool="rect" title="Square / Rectangle (R)">
+        <span class="icon">&#9633;</span><span class="label">Square/Rect</span>
+      </button>
+      <button class="tool" data-tool="hst" title="Half-square triangle (H)">
+        <span class="icon">&#9698;&#65039;</span><span class="label">HST</span>
+      </button>
+      <button class="tool" data-tool="sewflip" title="Sew-and-flip corner (F)">
+        <span class="icon">&#9698;</span><span class="label">Sew-Flip</span>
+      </button>
+      <button class="tool" data-tool="arrow" title="Press / sew direction arrow (A)">
+        <span class="icon">&#8599;&#65039;</span><span class="label">Arrow</span>
+      </button>
+      <button class="tool" data-tool="text" title="Text / &quot;Make N&quot; note (T)">
+        <span class="icon">T</span><span class="label">Text</span>
+      </button>
+
+      <div class="divider"></div>
+
+      <button id="btnUndo" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+      <button id="btnRedo" title="Redo (Ctrl+Shift+Z)">&#8631; Redo</button>
+
+      <div class="divider"></div>
+
+      <button id="btnDuplicate" title="Duplicate selection (Ctrl+D)">&#10064; Duplicate</button>
+      <button id="btnRotateCCW" title="Rotate left 45&deg;">&#8634; Rotate</button>
+      <button id="btnRotateCW" title="Rotate right 45&deg;">&#8635; Rotate</button>
+      <button id="btnMirrorH" title="Mirror horizontally">&#8596; Mirror</button>
+      <button id="btnMirrorV" title="Mirror vertically">&#8597; Mirror</button>
+      <button id="btnDelete" title="Delete selection (Del)">&#128465;&#65039; Delete</button>
+
+      <div class="divider"></div>
+
+      <button id="btnGroup" title="Group selected shapes into one composite piece (Ctrl+G)">&#8862; Group</button>
+      <button id="btnUngroup" title="Ungroup (Ctrl+Shift+G)">&#8862; Ungroup</button>
+
+      <div class="divider"></div>
+
+      <h4>Label Colors</h4>
+      <div id="labelColorsList" class="label-colors-list"></div>
+      <div id="labelColorsEmpty" class="hint">Type a letter on a shape to create a label — it'll show up here so you can recolor it everywhere at once.</div>
+    </aside>
+
+    <div id="canvasWrap">
+      <svg id="canvas" width="3000" height="2000" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowHead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z"></path>
+          </marker>
+        </defs>
+        <g id="gridLayer"></g>
+        <g id="shapeLayer"></g>
+        <g id="selectionLayer"></g>
+        <g id="marqueeLayer"></g>
+      </svg>
+    </div>
+
+    <aside id="properties">
+      <h3>Properties</h3>
+      <div id="propsEmpty" class="props-empty">Select a shape to edit its properties, or pick a tool on the left to add one.</div>
+      <div id="propsForm" class="props-form" hidden>
+
+        <div class="prop-row" id="propSize">
+          <label>Width (in) <input type="number" id="propW" step="0.125" min="0.125"></label>
+          <label>Height (in) <input type="number" id="propH" step="0.125" min="0.125"></label>
+        </div>
+
+        <div class="prop-row" id="propLabelRow">
+          <label>Label <input type="text" id="propLabel" maxlength="2" placeholder="A"></label>
+          <span id="propColorSwatch" class="swatch"></span>
+          <label>Position
+            <select id="propLabelPos">
+              <option value="center">Center</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+            </select>
+          </label>
+          <label>Size (in) <input type="number" id="propLabelSize" step="0.05" min="0.05" placeholder="auto"></label>
+        </div>
+
+        <div class="prop-row" id="propHstRow" hidden>
+          <label>Triangle A label
+            <input type="text" id="propLabelA" maxlength="2" placeholder="A">
+          </label>
+          <span id="propColorSwatchA" class="swatch"></span>
+          <label>Position
+            <select id="propLabelPosA">
+              <option value="center">Center</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+            </select>
+          </label>
+          <label>Size (in) <input type="number" id="propLabelSizeA" step="0.05" min="0.05" placeholder="auto"></label>
+        </div>
+        <div class="prop-row" id="propHstRow2" hidden>
+          <label>Triangle B label
+            <input type="text" id="propLabelB" maxlength="2" placeholder="B">
+          </label>
+          <span id="propColorSwatchB" class="swatch"></span>
+          <label>Position
+            <select id="propLabelPosB">
+              <option value="center">Center</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+            </select>
+          </label>
+          <label>Size (in) <input type="number" id="propLabelSizeB" step="0.05" min="0.05" placeholder="auto"></label>
+        </div>
+        <div class="prop-row" id="propHstRow3" hidden>
+          <button id="btnFlipDiagonal" type="button">Flip diagonal</button>
+        </div>
+
+        <div class="prop-row" id="propHstRow4" hidden>
+          <label>Press line
+            <select id="propPressLine">
+              <option value="none">None</option>
+              <option value="dashed">Dashed</option>
+              <option value="solid">Solid</option>
+            </select>
+          </label>
+          <label>Fold arrow
+            <select id="propPressArrow">
+              <option value="none" selected>None</option>
+              <option value="towardA">Toward A</option>
+              <option value="towardB">Toward B</option>
+              <option value="both">Both directions</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="prop-row" id="propSewRow" hidden>
+          <label>Sew corner
+            <select id="propSewCorner">
+              <option value="none">None</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+            </select>
+          </label>
+          <label>Corner size (in) <input type="number" id="propCornerSize" step="0.125" min="0.125"></label>
+        </div>
+
+        <div class="prop-row" id="propDashRow" hidden>
+          <label>Dashed line from
+            <select id="propDashFrom">
+              <option value="none">None</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+              <option value="topMid">Top-middle</option>
+              <option value="bottomMid">Bottom-middle</option>
+              <option value="leftMid">Left-middle</option>
+              <option value="rightMid">Right-middle</option>
+            </select>
+          </label>
+          <label>to
+            <select id="propDashTo">
+              <option value="none">None</option>
+              <option value="tl">Top-left</option>
+              <option value="tr">Top-right</option>
+              <option value="bl">Bottom-left</option>
+              <option value="br">Bottom-right</option>
+              <option value="topMid">Top-middle</option>
+              <option value="bottomMid">Bottom-middle</option>
+              <option value="leftMid">Left-middle</option>
+              <option value="rightMid">Right-middle</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="prop-row" id="propTextRow" hidden>
+          <label>Text <input type="text" id="propText" placeholder="Make 4"></label>
+        </div>
+
+        <div class="prop-row" id="propFillRow">
+          <label>Fill color <input type="color" id="propFill"></label>
+        </div>
+
+        <div class="prop-row" id="propBorderRow">
+          <label class="field" style="flex:1 1 100%;">
+            <input type="checkbox" id="propHideBorder">
+            Hide this piece's border
+          </label>
+        </div>
+
+        <div class="prop-row">
+          <label>Rotation (&deg;) <input type="number" id="propRotation" step="45"></label>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="hint">
+        Tip: drag near the grid or near another shape's edge to snap. Diagrams are just groups of
+        shapes &mdash; select the pieces for one diagram and use Export to save just that group.
+      </div>
+    </aside>
+
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
