@@ -60,6 +60,12 @@
     gridUnit: 0.25,   // inches
     labelColors: {},  // letter -> hex color
     showBorders: true,
+    // groupId -> true when that composite piece gets an outline drawn around
+    // its outer edge; a standalone (ungrouped) shape can get the same
+    // treatment, keyed by its own shape id instead — ids from uid() always
+    // start with "s" and groupUid() always with "g", so the two id spaces
+    // never collide and can safely share this one map.
+    groupBorders: {},
     shapes: []
   };
 
@@ -128,6 +134,9 @@
   const propFill = document.getElementById("propFill");
   const propBorderRow = document.getElementById("propBorderRow");
   const propHideBorder = document.getElementById("propHideBorder");
+  const propGroupBorderRow = document.getElementById("propGroupBorderRow");
+  const propGroupBorder = document.getElementById("propGroupBorder");
+  const propGroupBorderLabel = document.getElementById("propGroupBorderLabel");
   const propRotation = document.getElementById("propRotation");
 
   // ---------------------------------------------------------------------
@@ -165,7 +174,7 @@
   // History (undo/redo) — full-state snapshots, simplest thing that's correct
   // ---------------------------------------------------------------------
   function snapshotState() {
-    return JSON.stringify({ shapes: project.shapes, labelColors: project.labelColors });
+    return JSON.stringify({ shapes: project.shapes, labelColors: project.labelColors, groupBorders: project.groupBorders });
   }
 
   function pushHistory() {
@@ -183,6 +192,7 @@
     const state = JSON.parse(undoStack.pop());
     project.shapes = state.shapes;
     project.labelColors = state.labelColors;
+    project.groupBorders = state.groupBorders || {};
     selection.clear();
     fileDirty = true; // moved away from whatever was last written to a file
     renderAll();
@@ -195,6 +205,7 @@
     const state = JSON.parse(redoStack.pop());
     project.shapes = state.shapes;
     project.labelColors = state.labelColors;
+    project.groupBorders = state.groupBorders || {};
     selection.clear();
     fileDirty = true;
     renderAll();
@@ -542,6 +553,87 @@
     for (const shape of project.shapes) {
       shapeLayer.appendChild(renderShapeNode(shape));
     }
+    renderGroupBorders(shapeLayer);
+  }
+
+  // groupId -> its member shapes, in project.shapes order. Members of a
+  // group aren't necessarily contiguous in project.shapes, so this is
+  // recomputed (cheaply — this app's projects are small) whenever needed
+  // rather than maintained incrementally.
+  function groupsById() {
+    const map = {};
+    project.shapes.forEach((s) => {
+      if (!s.groupId) return;
+      (map[s.groupId] || (map[s.groupId] = [])).push(s);
+    });
+    return map;
+  }
+
+  // Resolves a project.groupBorders key to the shape(s) it borders: a real
+  // group's members if the key is a groupId, or the one shape it names if
+  // the key is a standalone shape's own id (and that shape is still
+  // standalone — if it's since been grouped, its old solo entry is inert).
+  // `groups` is a groupsById() result, passed in so callers that resolve
+  // several keys in a row don't each recompute it.
+  function borderMembers(key, groups) {
+    if (groups[key]) return groups[key];
+    const s = project.shapes.find((sh) => sh.id === key && !sh.groupId);
+    return s ? [s] : null;
+  }
+
+  // Draws the "outside edge of the block" border: a plain black rect around
+  // the outer bounding box of every group or standalone shape that has the
+  // feature turned on (project.groupBorders). This is deliberately separate
+  // from each piece's own .shape-fill outline (BORDERED_TYPES/hideBorder
+  // above) — that one traces every seam inside the block, this one exists
+  // so the whole block reads as an opaque unit against a white page, and it
+  // stays visible even when per-piece borders are turned off.
+  // pointer-events:none keeps it purely decorative — clicks pass through to
+  // whatever's underneath (a shape, or empty canvas for the marquee).
+  function renderGroupBorders(targetLayer) {
+    const groups = groupsById();
+    Object.keys(project.groupBorders).forEach((key) => {
+      if (!project.groupBorders[key]) return;
+      const members = borderMembers(key, groups);
+      if (!members) return;
+      // No padding: the stroke sits right on the block's outer edge (same
+      // convention as a piece's own .shape-fill stroke — centered on the
+      // true edge, so it reads as flush rather than floating off it).
+      const bbox = computeBBox(members, 0);
+      targetLayer.appendChild(svgEl("rect", {
+        x: bbox.x, y: bbox.y, width: bbox.w, height: bbox.h,
+        class: "group-border-box",
+        "data-group-border": key,
+        style: "pointer-events:none"
+      }));
+    });
+  }
+
+  // Non-null (the shared groupId) only when the current selection is
+  // exactly one complete composite group — same condition renderSelection()
+  // uses to draw a single unified selection box instead of one per piece,
+  // so "you see the group box" and "you can toggle its border" line up.
+  function wholeGroupSelection() {
+    const sel = selectedShapes();
+    if (sel.length < 2) return null;
+    const gid = sel[0].groupId;
+    if (!gid) return null;
+    if (!sel.every((s) => s.groupId === gid)) return null;
+    if (project.shapes.filter((s) => s.groupId === gid).length !== sel.length) return null;
+    return gid;
+  }
+
+  // The project.groupBorders key the current selection can toggle a border
+  // for, or null if the selection isn't eligible right now: either a single
+  // ungrouped shape (bordered by its own id) or one whole composite group
+  // (bordered by its shared groupId). A single shape drilled into *within*
+  // an existing group is deliberately excluded — select the whole group to
+  // border it instead, so there's never ambiguity about what a click
+  // affects.
+  function borderTargetKey() {
+    const sel = selectedShapes();
+    if (sel.length === 1) return sel[0].groupId ? null : sel[0].id;
+    return wholeGroupSelection();
   }
 
   function renderShapeNode(shape) {
@@ -802,12 +894,7 @@
     // If the selection is exactly one complete composite group, draw a
     // single unified box around it instead of a box per piece — that's the
     // visual cue that these pieces are grouped, not just multi-selected.
-    const gid = shapes[0].groupId;
-    const isWholeGroup = shapes.length > 1 && gid &&
-      shapes.every((s) => s.groupId === gid) &&
-      project.shapes.filter((s) => s.groupId === gid).length === shapes.length;
-
-    if (isWholeGroup) {
+    if (wholeGroupSelection()) {
       const bbox = computeBBox(shapes);
       selectionLayer.appendChild(svgEl("rect", {
         x: bbox.x, y: bbox.y, width: bbox.w, height: bbox.h, class: "selection-box group-box"
@@ -876,6 +963,17 @@
       propHideBorder.checked = borderedSel.every((s) => s.hideBorder);
     }
 
+    const borderKey = borderTargetKey();
+    propGroupBorderRow.hidden = !borderKey;
+    if (borderKey) {
+      propGroupBorder.checked = !!project.groupBorders[borderKey];
+      // groupUid() ids start with "g", uid() ids start with "s" — that
+      // prefix is what tells the two cases apart here.
+      propGroupBorderLabel.textContent = borderKey.charAt(0) === "g"
+        ? "Draw border around this group"
+        : "Draw border around this piece";
+    }
+
     if (single) {
       propW.value = round2(pxToInches(single.w));
       propH.value = round2(pxToInches(single.h));
@@ -919,7 +1017,7 @@
 
   [propW, propH, propLabel, propLabelPos, propLabelSize, propLabelA, propLabelPosA, propLabelSizeA,
     propLabelB, propLabelPosB, propLabelSizeB, propPressLine, propPressArrow, propSewCorner, propCornerSize,
-    propDashFrom, propDashTo, propText, propFill, propHideBorder, propRotation].forEach((el) => {
+    propDashFrom, propDashTo, propText, propFill, propHideBorder, propGroupBorder, propRotation].forEach((el) => {
     el.addEventListener("focus", () => { propsSnapshotTaken = false; });
     el.addEventListener("blur", () => { propsSnapshotTaken = false; });
   });
@@ -1032,6 +1130,15 @@
     if (!sel.length) return;
     const val = propHideBorder.checked;
     withPropsSnapshot(() => { sel.forEach((s) => { s.hideBorder = val; }); });
+  });
+  propGroupBorder.addEventListener("change", () => {
+    const key = borderTargetKey();
+    if (!key) return;
+    const val = propGroupBorder.checked;
+    withPropsSnapshot(() => {
+      if (val) project.groupBorders[key] = true;
+      else delete project.groupBorders[key];
+    });
   });
   propRotation.addEventListener("change", () => {
     const s = selectedShapes()[0]; if (!s) return;
@@ -1254,7 +1361,10 @@
     if (sel.length < 2) return;
     pushHistory();
     const gid = groupUid();
-    sel.forEach((s) => { s.groupId = gid; });
+    // Any standalone-shape border flag keyed by one of these shapes' own
+    // ids is now meaningless (it's about to gain a groupId, so it's no
+    // longer "standalone") — drop it rather than leave it as inert clutter.
+    sel.forEach((s) => { delete project.groupBorders[s.id]; s.groupId = gid; });
     renderAll();
   }
 
@@ -1262,7 +1372,15 @@
     const sel = selectedShapes();
     if (!sel.some((s) => s.groupId)) return;
     pushHistory();
+    // A partial selection of a group can be ungrouped on its own (leaving
+    // the rest of the group intact), so a groupId only actually goes away
+    // once nothing references it anymore — only then is it safe to drop its
+    // entry from project.groupBorders too.
+    const touchedGids = new Set(sel.map((s) => s.groupId).filter(Boolean));
     sel.forEach((s) => { s.groupId = null; });
+    touchedGids.forEach((gid) => {
+      if (!project.shapes.some((s) => s.groupId === gid)) delete project.groupBorders[gid];
+    });
     renderAll();
   }
 
@@ -1278,9 +1396,17 @@
       copy.id = uid();
       copy.x += offset;
       copy.y += offset;
-      if (copy.groupId) {
-        if (!groupMap[copy.groupId]) groupMap[copy.groupId] = groupUid();
-        copy.groupId = groupMap[copy.groupId];
+      // carry the "draw a border around this block" flag over to the
+      // duplicate's own new id (group or standalone shape, whichever
+      // applies), so a duplicated block keeps its outline instead of
+      // silently losing it
+      if (s.groupId) {
+        if (!groupMap[s.groupId]) groupMap[s.groupId] = groupUid();
+        const newGid = groupMap[s.groupId];
+        if (project.groupBorders[s.groupId]) project.groupBorders[newGid] = true;
+        copy.groupId = newGid;
+      } else if (project.groupBorders[s.id]) {
+        project.groupBorders[copy.id] = true;
       }
       project.shapes.push(copy);
       newIds.push(copy.id);
@@ -1344,7 +1470,17 @@
   function deleteSelection() {
     if (!selection.size) return;
     pushHistory();
+    const touchedGids = new Set(
+      project.shapes.filter((s) => selection.has(s.id) && s.groupId).map((s) => s.groupId)
+    );
+    // a deleted shape's own id can never come back, so drop its
+    // standalone-shape border entry (a no-op delete if it never had one)
+    selection.forEach((id) => { delete project.groupBorders[id]; });
     project.shapes = project.shapes.filter((s) => !selection.has(s.id));
+    // drop group-border flags for any group that no longer has any pieces left
+    touchedGids.forEach((gid) => {
+      if (!project.shapes.some((s) => s.groupId === gid)) delete project.groupBorders[gid];
+    });
     selection.clear();
     renderAll();
   }
@@ -1418,6 +1554,7 @@
       gridUnit: project.gridUnit,
       labelColors: project.labelColors,
       showBorders: project.showBorders,
+      groupBorders: project.groupBorders,
       shapes: project.shapes
     };
   }
@@ -1526,6 +1663,7 @@
     pushHistory();
     project.shapes = [];
     project.labelColors = {};
+    project.groupBorders = {};
     selection.clear();
     // A blank project has nothing to do with whatever file was open before —
     // don't let a later Save silently overwrite it with this empty state.
@@ -1593,6 +1731,7 @@
     project.gridUnit = data.gridUnit || 0.25;
     project.labelColors = data.labelColors || {};
     project.showBorders = data.showBorders !== undefined ? data.showBorders : true;
+    project.groupBorders = data.groupBorders || {};
     project.shapes = data.shapes || [];
     // keep future shape/group ids from colliding with loaded ones
     let maxN = 0;
@@ -1867,7 +2006,8 @@
     return selection.size ? selectedShapes() : project.shapes;
   }
 
-  function computeBBox(shapes) {
+  function computeBBox(shapes, pad) {
+    if (pad === undefined) pad = 8;
     if (!shapes.length) return { x: 0, y: 0, w: inchesToPx(4), h: inchesToPx(4) };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     shapes.forEach((s) => {
@@ -1875,7 +2015,6 @@
       minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
       maxX = Math.max(maxX, b.x2); maxY = Math.max(maxY, b.y2);
     });
-    const pad = 8;
     return { x: minX - pad, y: minY - pad, w: (maxX - minX) + pad * 2, h: (maxY - minY) + pad * 2 };
   }
 
@@ -1893,6 +2032,17 @@
     shapeLayer.querySelectorAll(":scope > g").forEach((node) => {
       if (ids.has(node.getAttribute("data-id"))) g.appendChild(node.cloneNode(true));
     });
+    // A block's border only comes along for the ride if every piece it
+    // covers is actually part of this export — otherwise it'd be drawing an
+    // outline around pieces that aren't there.
+    const groups = groupsById();
+    shapeLayer.querySelectorAll("[data-group-border]").forEach((node) => {
+      const key = node.getAttribute("data-group-border");
+      const members = borderMembers(key, groups);
+      if (members && members.every((s) => ids.has(s.id))) {
+        g.appendChild(node.cloneNode(true));
+      }
+    });
     svgOut.appendChild(g);
 
     // inline the stylesheet rules the exported shapes rely on, so the file
@@ -1903,6 +2053,7 @@
       : ".shape-fill { stroke:none; }";
     style.textContent = `
       ${borderRule}
+      .group-border-box { fill:none; stroke:#000; stroke-width:3; }
       .sew-line { stroke:#33383f; stroke-width:1.5; stroke-dasharray:5 4; fill:none; }
       .press-line-solid { stroke:#33383f; stroke-width:2; fill:none; }
       .press-arrow { stroke:#33383f; stroke-width:2.5; fill:none; marker-end:url(#arrowHead); }

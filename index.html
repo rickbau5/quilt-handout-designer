@@ -252,6 +252,13 @@
           </label>
         </div>
 
+        <div class="prop-row" id="propGroupBorderRow" hidden>
+          <label class="field" style="flex:1 1 100%;">
+            <input type="checkbox" id="propGroupBorder">
+            <span id="propGroupBorderLabel">Draw border around this group</span>
+          </label>
+        </div>
+
         <div class="prop-row">
           <label>Rotation (&deg;) <input type="number" id="propRotation" step="45"></label>
         </div>
@@ -261,6 +268,8 @@
       <div class="hint">
         Tip: drag near the grid or near another shape's edge to snap. Diagrams are just groups of
         shapes &mdash; select the pieces for one diagram and use Export to save just that group.
+        Select a whole group to turn on a black outline around its outside edge, so the block
+        reads against a white page even with piece borders off.
       </div>
     </aside>
 

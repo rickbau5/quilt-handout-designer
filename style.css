@@ -355,6 +355,12 @@ select, input[type=number], input[type=text] {
   stroke-width: 2;
 }
 
+.group-border-box {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3;
+}
+
 .marquee-box {
   fill: rgba(79, 124, 255, 0.08);
   stroke: var(--accent);
